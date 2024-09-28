@@ -170,9 +170,24 @@ class OidcSession
     @scope ||= scope & settings.scope.split unless (settings.scope.nil? || settings.scope.empty?)
   end
 
+  def oidc_jwks
+    @kid = Rails.cache.read(:oidc_jwk_kid)
+    begin
+      jwks = oidc_config.jwk(@kid)
+    rescue JSON::JWK::Set::KidNotFound
+      oidc_config.instance_variable_set(:@jwks, nil)
+      jwks = oidc_config.jwks
+      if key = jwks.find { |k| k[:alg] == ENV['REDMINE_OIDC_JWK_ALG'] }
+        @kid = key[:kid]
+        Rails.cache.write(:oidc_jwk_kid, @kid)
+      end
+    end
+    jwks
+  end
+
   def decoded_id_token
     raise Exception.new("No ID token in session") unless @id_token.present?
-    @decoded_id_token ||= OpenIDConnect::ResponseObject::IdToken.decode(@id_token, oidc_config.jwks)
+    @decoded_id_token ||= OpenIDConnect::ResponseObject::IdToken.decode(@id_token, oidc_jwks)
   end
 
   def decoded_refresh_token
